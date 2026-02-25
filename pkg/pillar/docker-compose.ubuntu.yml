@@ -1,0 +1,36 @@
+# Copyright (c) 2024 Zededa, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+# Docker Compose configuration for running EVE pillar on Ubuntu.
+# Prerequisites:
+#   1. containerd running on the host
+#   2. ./config/ directory populated with device credentials (see config/README)
+
+services:
+  pillar:
+    build:
+      context: .
+      dockerfile: Dockerfile.ubuntu
+    container_name: eve-pillar
+    privileged: true
+    network_mode: host
+    volumes:
+      # PubSub IPC - ephemeral sockets and agent state
+      - type: tmpfs
+        target: /run
+        tmpfs:
+          size: 128m
+      # Host containerd socket
+      - /run/containerd/containerd.sock:/run/containerd/containerd.sock
+      # Persistent state across restarts
+      - eve-persist:/persist
+      # Device identity and controller config (read-only)
+      - ./config:/config:ro
+      # Host filesystem for cgroup and kernel info
+      - /sys:/hostfs/sys:ro
+      - /proc:/hostfs/proc:ro
+    restart: unless-stopped
+
+volumes:
+  eve-persist:
+    driver: local

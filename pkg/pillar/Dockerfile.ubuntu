@@ -1,0 +1,81 @@
+# Copyright (c) 2024 Zededa, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+# Multi-stage Dockerfile for building EVE pillar on Ubuntu.
+# Uses the "ubuntu" build tag to exclude ZFS/TPM agents and their CGO dependencies.
+
+# ---- Stage 1: Builder ----
+FROM golang:1.24-bookworm AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libc6-dev make git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /pillar
+COPY . /pillar/
+
+ENV GO111MODULE=on
+ENV GOFLAGS=-mod=vendor
+ENV CGO_ENABLED=1
+ENV GOOS=linux
+
+ARG TARGETARCH=amd64
+ENV GOARCH=${TARGETARCH}
+
+ARG BUILD_VERSION=ubuntu-dev
+
+RUN go build -tags ubuntu \
+    -ldflags "-s -w" \
+    -o /out/opt/zededa/bin/zedbox ./zedbox
+
+# Create symlinks for all agents
+RUN cd /out/opt/zededa/bin && \
+    for agent in \
+        client command diag domainmgr downloader evalmgr executor \
+        faultinjection hardwaremodel ledmanager loguploader nim nodeagent \
+        verifier volumemgr waitforaddr zedagent zedkube zedmanager \
+        zedrouter ipcmonitor baseosmgr wstunnelclient conntrack pbuf \
+        tpmmgr vaultmgr upgradeconverter watcher zfsmanager usbmanager \
+        collectinfo vcomlink monitor; do \
+        ln -sf zedbox "$agent"; \
+    done
+
+# ---- Stage 2: Runtime ----
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    dnsmasq \
+    iptables \
+    iproute2 \
+    ipset \
+    ethtool \
+    jq \
+    dmidecode \
+    pciutils \
+    util-linux \
+    ca-certificates \
+    curl \
+    rsync \
+    e2fsprogs \
+    radvd \
+    kmod \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy built binaries and symlinks
+COPY --from=builder /out/ /
+
+# Copy scripts needed at runtime
+COPY scripts/device-steps.sh /opt/zededa/bin/
+COPY scripts/handlezedserverconfig.sh /opt/zededa/bin/
+COPY scripts/veth.sh /opt/zededa/bin/
+COPY scripts/dhcpcd.sh /opt/zededa/bin/
+
+# Copy ubuntu startup script
+COPY scripts/ubuntu-start.sh /ubuntu-start.sh
+RUN chmod +x /ubuntu-start.sh && \
+    chmod +x /opt/zededa/bin/*.sh
+
+# Create required directories
+RUN mkdir -p /run/global /persist /config /opt/zededa/bin
+
+CMD ["/ubuntu-start.sh"]

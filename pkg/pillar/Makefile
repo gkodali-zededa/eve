@@ -133,3 +133,25 @@ fmt-check-details:
 
 vet:
 	go vet $(TAGS) ./...
+
+# ---- Ubuntu Docker container targets ----
+UBUNTU_DOCKER_TAG := lfedge/eve-pillar-ubuntu:local-$(ZARCH)
+
+.PHONY: build-ubuntu build-docker-ubuntu run-ubuntu stop-ubuntu
+
+build-ubuntu: $(DISTDIR)
+	@echo "Building zedbox with ubuntu tag"
+	GO111MODULE=on GOOS=linux GOARCH=$(ZARCH) CGO_ENABLED=1 \
+		go build -mod=vendor -tags ubuntu $(GCFLAGS) $(LDFLAGS) \
+		-o $(DISTDIR)/zedbox-ubuntu ./zedbox
+
+build-docker-ubuntu:
+	docker build -f Dockerfile.ubuntu \
+		--build-arg TARGETARCH=$(ZARCH) \
+		-t $(UBUNTU_DOCKER_TAG) .
+
+run-ubuntu:
+	docker compose -f docker-compose.ubuntu.yml up -d
+
+stop-ubuntu:
+	docker compose -f docker-compose.ubuntu.yml down

@@ -1,3 +1,5 @@
+//go:build !ubuntu
+
 // Copyright (c) 2025 Zededa, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
